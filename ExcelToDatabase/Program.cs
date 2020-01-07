@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data;
+using System.Data.SqlClient;
 using System.Linq;
 using ClosedXML.Excel;
 
@@ -18,25 +20,79 @@ namespace ExcelToDatabase
         static readonly string SampleFile =
             System.IO.Path.Combine("Files", "Financial Sample.xlsx");
 
+        const string serverPath = "";
+        const string dbName = "";
+        const string username = "";
+        const string password = "";
+        const string ourProcedure = "FromExcelToTable";
+
+        static readonly string connectionString = $"Server={serverPath}" +
+            $"Initial Catalog={dbName};" +
+            "Persist Security Info=False;" +
+            $"User ID={username};" +
+            $"Password={password};" +
+            "MultipleActiveResultSets=False;" +
+            "Encrypt=True;" +
+            "TrustServerCertificate=False;" +
+            "Connection Timeout=30;";
+
         static void Main(string[] args)
         {
-            var result = ReadExcelFile(SampleFile);
+            var (columns, rows) = ReadExcelFile(SampleFile);
 
-            if (result.columns.Count > 0)
+            if (columns.Count > 0)
             {
-                string columnsString = string.Join(",", result.columns);
+                // Make it nice
+                string columnsString = string.Join(",",
+                    columns.Select(x => $"[{x.Trim()}]"));
 
-                foreach (List<string> row in result.rows)
+                foreach (List<string> row in rows)
                 {
                     string rowString = string.Join(",", row);
 
                     string finalString =
                         $"INSERT INTO SomeTable({columnsString})" +
                         $"VALUES ({rowString});";
+
+                    CallStoredProcedure(
+                        cString: connectionString,
+                        spName: ourProcedure,
+                        parameters : new Dictionary<string, string>{
+                        {"@tableName", "SomeTable"},
+                        {"@columns", columnsString},
+                        {"@row", rowString}
+                    });
                 }
             }
 
             Console.ReadKey();
+        }
+
+        internal static void CallStoredProcedure(
+            string cString,
+            string spName,
+            Dictionary<string, string> parameters)
+        {
+            using var conn = new SqlConnection(cString);
+            using var command = new SqlCommand(spName, conn)
+            {
+                CommandType = CommandType.StoredProcedure
+            };
+            foreach (KeyValuePair<string, string> parameter in parameters)
+            {
+                command.Parameters.AddWithValue(parameter.Key, parameter.Value);
+            }
+
+            try
+            {
+                conn.Open();
+                command.ExecuteNonQuery();
+            }
+            catch (Exception e)
+            {
+                // See if anything happes here, should not
+                Console.WriteLine(e.Message);
+            }
         }
 
         // This will read first sheet
